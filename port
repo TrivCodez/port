@@ -1,7 +1,8 @@
+
 #!/bin/bash
 
 DB_FILE="/tmp/port_tunnels.db"
-SERVER="124.6.63.23"
+SERVER="124.6.63.69"
 USER="tunnel"
 
 mkdir -p /tmp
@@ -10,11 +11,11 @@ touch "$DB_FILE"
 add_tunnel() {
   LOCAL_PORT=$1
   TMPFILE=$(mktemp)
-  ssh -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
   SSH_PID=$!
   sleep 1
   if grep -q "Allocated port" "$TMPFILE"; then
-    REMOTE_PORT=$(grep "Allocated port" "$TMPFILE" | grep -oP '\d{4,5}')
+    REMOTE_PORT=$(grep "Allocated port" "$TMPFILE" | grep -oP '\d{4,5}' | head -n1)
     echo "$LOCAL_PORT:$REMOTE_PORT:$SSH_PID" >> "$DB_FILE"
     echo "✅ port $LOCAL_PORT forwarded to $SERVER:$REMOTE_PORT, WWW!!!"
   else
@@ -60,14 +61,27 @@ list_tunnels() {
   done < "$DB_FILE"
 }
 
+reset() {
+  echo "⚠️  resetting port will also stop this ssh connection, you will be disconnected, is that ok? (y/n)"
+  read -r CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    > "$DB_FILE"
+    pkill -9 ssh 2>/dev/null
+    echo "🧼 reset done"
+  else
+    echo "🚫 reset cancelled"
+  fi
+}
+
 print_help() {
-  echo "🧪 port script helper!!!"
+  echo "🧪 port script helper by steeldev heh!!!"
   echo "usage:"
-  echo "  ./port add <port>        add tunnel for local port"
-  echo "  ./port stop <port>       stop 1 tunnel"
-  echo "  ./port stop all          kill all tunnels"
-  echo "  ./port list tunnels      show tunnels that still live"
-  echo "  ./port help              this help screen lol"
+  echo "  port add <port>        add tunnel for local port"
+  echo "  port stop <port>       stop 1 tunnel"
+  echo "  port stop all          kill all tunnels"
+  echo "  port list tunnels      show tunnels that still live"
+  echo "  port reset             kill ALL ssh procs + wipe DB"
+  echo "  port help              this help screen lol"
 }
 
 case "$1" in
@@ -84,21 +98,24 @@ case "$1" in
     elif [[ -n "$2" ]]; then
       stop_tunnel "$2"
     else
-      echo "usage: ./port stop <local_port|all>"
+      echo "usage: port stop <local_port|all>"
     fi
     ;;
   list)
     if [[ "$2" == "tunnels" ]]; then
       list_tunnels
     else
-      echo "usage: ./port list tunnels"
+      echo "usage: port list tunnels"
     fi
+    ;;
+  reset)
+    reset
     ;;
   help)
     print_help
     ;;
   *)
     echo "❓ unknown command: $1"
-    echo "try: ./port help"
+    echo "try: port help"
     ;;
 esac
