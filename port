@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DB_FILE="/tmp/port_tunnels.db"
-SERVER="124.6.63.69"
+SERVER="45.184.85.20"
 USER="tunnel"
 
 mkdir -p /tmp
