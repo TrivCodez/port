@@ -1,0 +1,147 @@
+#!/bin/bash
+
+REMOTE_HOST="103.91.67.224"
+REMOTE_USER="root"
+SSH_PORT="65535"
+
+C_RESET='\033[0m'
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[0;33m'
+C_BLUE='\033[0;34m'
+C_PURPLE='\033[0;35m'
+C_CYAN='\033[0;36m'
+C_WHITE='\033[1;37m'
+
+EMOJI_TUNNEL="⚡"
+EMOJI_SPARKLE="✨"
+EMOJI_GEAR="⚙️"
+EMOJI_LINK="🔗"
+EMOJI_SUCCESS="✅"
+EMOJI_ERROR="❌"
+EMOJI_STOP="🛑"
+EMOJI_LIST="📋"
+EMOJI_WAVE="💡"
+
+usage() {
+    echo -e "${C_WHITE}⚡ Tunnelsmith Unleashed - Command & Control Panel${C_RESET}"
+    echo -e "---------------------------------------------------"
+    echo -e "${C_YELLOW}Usage:${C_RESET} ${C_CYAN}$0 ${C_PURPLE}<command> [options]${C_RESET}\n"
+    echo -e "${C_PURPLE}Commands:${C_RESET}"
+    echo -e "  ${C_CYAN}make <local_port>${C_RESET}   ${EMOJI_GEAR} Forge a new reverse SSH tunnel from a local port."
+    echo -e "                         Example: ${C_CYAN}$0 make 8080${C_RESET}\n"
+    echo -e "  ${C_CYAN}list${C_RESET}                ${EMOJI_LIST} Enumerate all active tunnels managed by Tunnelsmith.\n"
+    echo -e "  ${C_CYAN}kill <pid>${C_RESET}          ${EMOJI_STOP} Terminate a specific tunnel using its Process ID."
+    echo -e "                         Example: ${C_CYAN}$0 kill 12345${C_RESET}\n"
+    echo -e "  ${C_CYAN}killall${C_RESET}             ${EMOJI_STOP} Decimate all active tunnels without mercy.\n"
+    echo -e "  ${C_CYAN}help${C_RESET}                ${EMOJI_WAVE} Reveal the operational directives."
+    echo -e "---------------------------------------------------"
+}
+
+if [ -z "$1" ]; then
+    usage
+    exit 1
+fi
+
+case "$1" in
+    make)
+        LOCAL_PORT=$2
+        if [[ -z "$LOCAL_PORT" || ! "$LOCAL_PORT" =~ ^[0-9]+$ ]]; then
+            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: A valid local port number is mandatory.${C_RESET}"
+            echo -e "Syntax: ${C_CYAN}$0 make <port>${C_RESET}\n"
+            exit 1
+        fi
+
+        REMOTE_PORT=$(( RANDOM % 55535 + 10000 ))
+
+        echo -e "\n${EMOJI_TUNNEL} ${C_BLUE}Initiating tunnel construction...${C_RESET}"
+        echo -e "${EMOJI_GEAR} ${C_YELLOW}Establishing secure vector to ${C_WHITE}${REMOTE_HOST}${C_RESET}"
+        echo -e "${EMOJI_LINK} ${C_CYAN}Mapping:${C_RESET} Local Node ${C_WHITE}${LOCAL_PORT}${C_RESET} -> ${C_WHITE}${REMOTE_HOST}:${REMOTE_PORT}${C_RESET}\n"
+
+        nohup ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 \
+            -N -R ${REMOTE_PORT}:localhost:${LOCAL_PORT} \
+            ${REMOTE_USER}@${REMOTE_HOST} -p ${SSH_PORT} &> /tmp/tunnelsmith_log_${REMOTE_PORT}.log &
+
+        PID=$!
+        
+        sleep 2
+
+        if ps -p $PID > /dev/null; then
+            echo -e "${EMOJI_SUCCESS} ${C_GREEN}Tunnel online. Connection secured.${C_RESET}"
+            echo -e "  ${C_WHITE}PID:${C_RESET} ${C_YELLOW}${PID}${C_RESET}"
+            echo -e "  ${C_WHITE}Access Point:${C_RESET} ${C_CYAN}http://${REMOTE_HOST}:${REMOTE_PORT}${C_RESET} (If serving HTTP)"
+            echo -e "  ${C_WHITE}Audit Log:${C_RESET} /tmp/tunnelsmith_log_${REMOTE_PORT}.log"
+            echo -e "\n${EMOJI_STOP} To sever this connection, execute: ${C_PURPLE}tunnel kill ${PID}${C_RESET}\n"
+        else
+            echo -e "${EMOJI_ERROR} ${C_RED}Critical Error! Tunnel failed to establish.${C_RESET}"
+            echo -e "  Common causes: Authentication failure, port collision, or network disruption."
+            echo -e "  Inspect the failure log: ${C_YELLOW}cat /tmp/tunnelsmith_log_${REMOTE_PORT}.log${C_RESET}\n"
+            [ ! -s "/tmp/tunnelsmith_log_${REMOTE_PORT}.log" ] && rm "/tmp/tunnelsmith_log_${REMOTE_PORT}.log"
+        fi
+        ;;
+
+    list)
+        echo -e "\n${EMOJI_LIST} ${C_BLUE}Scanning for active Tunnelsmith conduits to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
+        
+        PIDS=$(pgrep -af "ssh.*-R.*${REMOTE_HOST}")
+        
+        if [ -n "$PIDS" ]; then
+            echo -e "------------------------------------------------------------------"
+            echo -e "${C_WHITE}PID\t\tREMOTE PORT\t\tLOCAL FORWARD (Local Port)${C_RESET}"
+            echo -e "------------------------------------------------------------------"
+            while read -r line; do
+                pid=$(echo "$line" | awk '{print $1}')
+                remote_p=$(echo "$line" | sed -n 's/.*-R \([0-9]*\):.*/\1/p')
+                local_p=$(echo "$line" | sed -n 's/.*localhost:\([0-9]*\).*/\1/p')
+                echo -e "${C_YELLOW}${pid}${C_RESET}\t\t${C_CYAN}${remote_p}${C_RESET}\t\t\t${C_PURPLE}${local_p}${C_RESET}"
+            done <<< "$PIDS"
+            echo -e "------------------------------------------------------------------\n"
+        else
+            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No active Tunnelsmith conduits detected. Environment is clear.${C_RESET}\n"
+        fi
+        ;;
+
+    kill)
+        PID_TO_KILL=$2
+        if [[ -z "$PID_TO_KILL" || ! "$PID_TO_KILL" =~ ^[0-9]+$ ]]; then
+            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: A valid PID is required for termination.${C_RESET}"
+            echo -e "Use '${C_CYAN}$0 list${C_RESET}' to manifest active PIDs.\n"
+            exit 1
+        fi
+
+        if ps -p $PID_TO_KILL > /dev/null; then
+            kill $PID_TO_KILL
+            echo -e "\n${EMOJI_STOP} ${C_GREEN}Termination signal sent to tunnel with PID ${C_YELLOW}${PID_TO_KILL}${C_RESET}.${C_RESET}\n"
+        else
+            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: No active process identified by PID ${C_YELLOW}${PID_TO_KILL}${C_RESET}.${C_RESET}\n"
+        fi
+        ;;
+
+    killall)
+        echo -e "\n${EMOJI_STOP} ${C_BLUE}Initiating mass termination protocol for all tunnels connected to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
+        PIDS_TO_KILL=$(pgrep -f "ssh.*-R.*${REMOTE_HOST}")
+        
+        if [ -n "$PIDS_TO_KILL" ]; then
+            echo -e "${C_YELLOW}Targeting the following active processes:${C_RESET}"
+            pgrep -af "ssh.*-R.*${REMOTE_HOST}"
+            read -p "$(echo -e ${C_RED}"Confirm mass termination? [y/N] "${C_RESET})" confirm
+            if [[ "$confirm" =~ ^[yY](es)?$ ]]; then
+                kill $PIDS_TO_KILL
+                echo -e "\n${EMOJI_SUCCESS} ${C_GREEN}All targeted tunnels successfully neutralized.${C_RESET}\n"
+            else
+                echo -e "\n${C_YELLOW}Mass termination aborted.${C_RESET}\n"
+            fi
+        else
+            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No active tunnels to eliminate. All clear.${C_RESET}\n"
+        fi
+        ;;
+
+    help)
+        usage
+        ;;
+
+    *)
+        usage
+        exit 1
+        ;;
+esac
